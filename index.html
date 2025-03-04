@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catch My Love</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Pixelated', Arial, sans-serif;
+            background: url('background.gif') repeat;
+            background-size: cover;
+        }
+
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #player {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 80px;
+            background: url('hand.gif') no-repeat;
+            background-size: contain;
+            transition: transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+
+        .heart {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: url('heart.gif') no-repeat;
+            background-size: contain;
+        }
+
+        .golden-heart {
+            background: url('goldenheart.gif') no-repeat;
+            background-size: contain;
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .splash-text {
+            position: absolute;
+            font-size: 20px;
+            color: #ff69b4;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            animation: fadeUp 3.5s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes fadeUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+        }
+
+        #game-over {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            color: #fff;
+        }
+
+        #game-over button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #ff69b4;
+            border: none;
+            border-radius: 5px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        #game-over button:hover {
+            background: #ff1493;
+        }
+
+        @media (max-width: 768px) {
+            #player {
+                width: 60px;
+                height: 60px;
+            }
+
+            .heart {
+                width: 30px;
+                height: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="fullscreen-tip">Press F11 for fullscreen</div>
+    <button id="exit-fullscreen">Exit Fullscreen</button>
+    <div id="game-container">
+        <div id="player"></div>
+        <div id="score">Hearts: 0</div>
+        <div id="game-over">
+            <h2>Game Over</h2>
+            <p id="game-over-message"></p>
+            <button onclick="restartGame()">Try Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Game configuration
+        const config = {
+            heartSpawnRate: 1000,
+            minSpeed: 2,
+            maxSpeed: 5,
+            goldenHeartChance: 0.1,
+            maxMissed: 5
+        };
+
+        // Game state
+        let gameState = {
+            score: 0,
+            missed: 0,
+            hearts: [],
+            playerPos: window.innerWidth / 2,
+            isGameOver: false,
+            touchStartX: null
+        };
+
+        // Arrays of messages
+        const catchMessages = [
+            "Caught one! Now catch my hints too. 😉",
+            "Nice catch! You're getting better at this. 💖",
+            "Smooth move! Almost as smooth as your pickup lines. 😘",
+            "Got it! Keep this up and you might catch my heart too! 💝",
+            "Perfect catch! You're making my heart skip a beat! 💓"
+        ];
+
+        const gameOverMessages = [
+            "Guess I'll have to make it easier for you to catch me. 😏",
+            "Practice makes perfect! Want to try catching my attention again? 💕",
+            "Aww, don't give up now! I know you can do better. 😘",
+            "Maybe we need to work on your catching skills together? 😉",
+            "Close, but not close enough! One more try? 💖"
+        ];
+
+        // Sound effects (commented out - add your own audio files)
+        const sounds = {
+            catch: new Audio('/path/to/catch-sound.mp3'),
+            golden: new Audio('/path/to/golden-catch-sound.mp3'),
+            miss: new Audio('/path/to/miss-sound.mp3'),
+            gameOver: new Audio('/path/to/game-over-sound.mp3')
+        };
+
+        // Fullscreen handling for cross-browser compatibility
+        function requestFullScreen(element) {
+            const methods = [
+                'requestFullscreen',
+                'webkitRequestFullscreen',
+                'mozRequestFullScreen',
+                'msRequestFullscreen'
+            ];
+
+            for (let method of methods) {
+                if (element[method]) {
+                    element[method]();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function exitFullScreen() {
+            const methods = [
+                'exitFullscreen',
+                'webkitExitFullscreen',
+                'mozCancelFullScreen',
+                'msExitFullscreen'
+            ];
+
+            for (let method of methods) {
+                if (document[method]) {
+                    document[method]();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Automatic fullscreen on interaction
+        function autoFullscreen(e) {
+            if (!document.fullscreenElement) {
+                requestFullScreen(document.documentElement);
+            }
+        }
+
+        function handleFullscreenChange() {
+            const exitButton = document.getElementById('exit-fullscreen');
+            const fullscreenTip = document.getElementById('fullscreen-tip');
+            
+            if (document.fullscreenElement) {
+                exitButton.style.display = 'block';
+                fullscreenTip.style.display = 'none';
+            } else {
+                exitButton.style.display = 'none';
+                fullscreenTip.style.display = 'block';
+                setTimeout(() => {
+                    fullscreenTip.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Initialize game
+        function init() {
+            // Setup fullscreen event listeners
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+            document.getElementById('exit-fullscreen').addEventListener('click', exitFullScreen);
+
+            // Add interaction listeners for auto fullscreen
+            document.addEventListener('keydown', autoFullscreen);
+            document.addEventListener('mousedown', autoFullscreen);
+
+            const player = document.getElementById('player');
+            player.style.left = `${gameState.playerPos - player.offsetWidth / 2}px`;
+
+            // Start spawning hearts
+            setInterval(spawnHeart, config.heartSpawnRate);
+
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+
+            // Event listeners
+            document.addEventListener('keydown', handleKeyPress);
+            document.addEventListener('touchstart', handleTouchStart);
+            document.addEventListener('touchmove', handleTouchMove);
+        }
+
+        // Heart spawning
+        function spawnHeart() {
+            if (gameState.isGameOver) return;
+
+            const heart = document.createElement('div');
+            heart.className = 'heart';
+            
+            // Random position
+            const xPos = Math.random() * (window.innerWidth - 40);
+            heart.style.left = `${xPos}px`;
+            heart.style.top = '0px';
+
+            // Random speed
+            const speed = config.minSpeed + Math.random() * (config.maxSpeed - config.minSpeed);
+            
+            // Chance for golden heart
+            const isGolden = Math.random() < config.goldenHeartChance;
+            if (isGolden) {
+                heart.classList.add('golden-heart');
+            }
+
+            gameState.hearts.push({
+                element: heart,
+                x: xPos,
+                y: 0,
+                speed: speed,
+                isGolden: isGolden
+            });
+
+            document.getElementById('game-container').appendChild(heart);
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (gameState.isGameOver) return;
+
+            const playerElem = document.getElementById('player');
+            const playerRect = playerElem.getBoundingClientRect();
+
+            // Update hearts
+            gameState.hearts.forEach((heart, index) => {
+                heart.y += heart.speed;
+                heart.element.style.top = `${heart.y}px`;
+
+                // Check for catches
+                if (heart.y + 40 >= playerRect.top &&
+                    heart.x + 40 >= playerRect.left &&
+                    heart.x <= playerRect.right) {
+                    catchHeart(heart, index);
+                }
+                // Check for misses
+                else if (heart.y > window.innerHeight) {
+                    missHeart(heart, index);
+                }
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Heart catching
+        function catchHeart(heart, index) {
+            gameState.score += heart.isGolden ? 2 : 1;
+            document.getElementById('score').textContent = `Hearts: ${gameState.score}`;
+            
+            // Play sound
+            if (heart.isGolden) {
+                sounds.golden.play().catch(() => {});
+            } else {
+                sounds.catch.play().catch(() => {});
+            }
+
+            // Show splash text
+            showSplashText(catchMessages[Math.floor(Math.random() * catchMessages.length)], heart.x, heart.y);
+
+            // Remove heart
+            heart.element.remove();
+            gameState.hearts.splice(index, 1);
+        }
+
+        // Heart missing
+        function missHeart(heart, index) {
+            gameState.missed++;
+            sounds.miss.play().catch(() => {});
+            
+            heart.element.remove();
+            gameState.hearts.splice(index, 1);
+
+            if (gameState.missed >= config.maxMissed) {
+                gameOver();
+            }
+        }
+
+        // Show splash text
+        function showSplashText(text, x, y) {
+            const splash = document.createElement('div');
+            splash.className = 'splash-text';
+            splash.textContent = text;
+            splash.style.left = `${x}px`;
+            splash.style.top = `${y}px`;
+            
+            document.getElementById('game-container').appendChild(splash);
+            
+            setTimeout(() => splash.remove(), 3500);
+        }
+
+        // Game over
+        function gameOver() {
+            gameState.isGameOver = true;
+            sounds.gameOver.play().catch(() => {});
+
+            const gameOver = document.getElementById('game-over');
+            const message = gameOverMessages[Math.floor(Math.random() * gameOverMessages.length)];
+            document.getElementById('game-over-message').textContent = message;
+            gameOver.style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            // Clear hearts
+            gameState.hearts.forEach(heart => heart.element.remove());
+            
+            // Reset state
+            gameState = {
+                score: 0,
+                missed: 0,
+                hearts: [],
+                playerPos: window.innerWidth / 2,
+                isGameOver: false,
+                touchStartX: null
+            };
+
+            // Reset UI
+            document.getElementById('score').textContent = 'Hearts: 0';
+            document.getElementById('game-over').style.display = 'none';
+            
+            const player = document.getElementById('player');
+            player.style.left = `${gameState.playerPos - player.offsetWidth / 2}px`;
+
+            // Restart game loop
+            requestAnimationFrame(gameLoop);
+            
+            // Restart heart spawning
+            setInterval(spawnHeart, config.heartSpawnRate);
+        }
+
+        // Input handling
+        function handleKeyPress(e) {
+            if (gameState.isGameOver) return;
+
+            const player = document.getElementById('player');
+            const playerWidth = player.offsetWidth;
+            const step = 20;
+
+            // Support both arrow keys and WASD
+            switch(e.key.toLowerCase()) {
+                case 'arrowleft':
+                case 'a':
+                    // Move left, but don't go beyond left screen edge
+                    gameState.playerPos = Math.max(playerWidth / 2, gameState.playerPos - step);
+                    break;
+                case 'arrowright':
+                case 'd':
+                    // Move right, but don't go beyond right screen edge
+                    gameState.playerPos = Math.min(window.innerWidth - playerWidth / 2, gameState.playerPos + step);
+                    break;
+            }
+
+            // Update player position, centering the player
+            player.style.left = `${gameState.playerPos - playerWidth / 2}px`;
+        }
+
+        function handleTouchStart(e) {
+            gameState.touchStartX = e.touches[0].clientX;
+        }
+
+        function handleTouchMove(e) {
+            if (gameState.isGameOver || !gameState.touchStartX) return;
+
+            const player = document.getElementById('player');
+            const playerWidth = player.offsetWidth;
+            const touchDelta = e.touches[0].clientX - gameState.touchStartX;
+            
+            // Update player position with screen boundary checks
+            gameState.playerPos = Math.max(
+                playerWidth / 2, 
+                Math.min(
+                    window.innerWidth - playerWidth / 2, 
+                    gameState.playerPos + touchDelta
+                )
+            );
+
+            // Center the player at the calculated position
+            player.style.left = `${gameState.playerPos - playerWidth / 2}px`;
+            gameState.touchStartX = e.touches[0].clientX;
+        }
+
+        // Start game when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
